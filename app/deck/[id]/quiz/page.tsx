@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
+import CopilotDrawer from "@/components/CopilotDrawer";
 import type { Session } from "@supabase/supabase-js";
 
 interface QuizQuestion {
@@ -30,6 +31,11 @@ export default function QuizPage({ params }: { params: { id: string } }) {
   const [score, setScore] = useState(0);
   const [finished, setFinished] = useState(false);
   const [savingResult, setSavingResult] = useState(false);
+
+  // Copilot Drawer States
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [copilotCardFront, setCopilotCardFront] = useState("");
+  const [copilotCardBack, setCopilotCardBack] = useState("");
 
   // Authentication check
   useEffect(() => {
@@ -93,7 +99,7 @@ export default function QuizPage({ params }: { params: { id: string } }) {
     } else {
       setSavingResult(true);
       setFinished(true);
-      
+
       // Explicitly include user_id to prevent null-constraint errors in supabase
       await supabase.from("quiz_attempts").insert({
         deck_id: params.id,
@@ -108,13 +114,22 @@ export default function QuizPage({ params }: { params: { id: string } }) {
   // Keyboard shortcut listener
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (isCopilotOpen) return;
       const key = e.key.toLowerCase();
       if (key in KEY_TO_INDEX) selectOption(KEY_TO_INDEX[key]);
       if (e.key === "Enter") proceed();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectOption, proceed]);
+  }, [selectOption, proceed, isCopilotOpen]);
+
+  const triggerCopilot = (question: string, correctOpt: string, explanation: string, options: string[]) => {
+    setCopilotCardFront(question);
+    setCopilotCardBack(
+      `Correct Answer: ${correctOpt}\nOptions: ${options.join(", ")}\nExplanation: ${explanation}`
+    );
+    setIsCopilotOpen(true);
+  };
 
   const resetQuiz = () => {
     setIndex(0);
@@ -245,14 +260,33 @@ export default function QuizPage({ params }: { params: { id: string } }) {
                     })}
                   </div>
 
-                  <div className="pl-7 text-xs text-muted leading-relaxed bg-paper/20 dark:bg-white/5 rounded-xl p-3 border border-ink/5 dark:border-paper/5">
-                    <span className="font-bold text-accent">Explanation:</span> {q.explanation}
+                  {/* Explanation box with Copilot trigger */}
+                  <div className="pl-7 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-paper/20 dark:bg-white/5 rounded-xl p-3 border border-ink/5 dark:border-paper/5 gap-3">
+                    <div className="text-xs text-muted leading-relaxed flex-1">
+                      <span className="font-bold text-accent">Explanation:</span> {q.explanation}
+                    </div>
+                    <button
+                      onClick={() =>
+                        triggerCopilot(q.question, q.options[q.correct_index], q.explanation, q.options)
+                      }
+                      className="px-3 py-1.5 border border-ink/10 dark:border-paper/10 text-muted hover:text-accent rounded-xl text-[10px] font-bold transition-all bg-white dark:bg-ink/30 shrink-0 flex items-center gap-1 shadow-sm"
+                    >
+                      <span>🤖</span> Ask Copilot
+                    </button>
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* Copilot Drawer overlay */}
+        <CopilotDrawer
+          isOpen={isCopilotOpen}
+          onClose={() => setIsCopilotOpen(false)}
+          cardFront={copilotCardFront}
+          cardBack={copilotCardBack}
+        />
       </motion.main>
     );
   }
@@ -347,19 +381,31 @@ export default function QuizPage({ params }: { params: { id: string } }) {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="bg-white dark:bg-white/5 border border-ink/10 dark:border-paper/10 rounded-3xl p-6 shadow-sm"
+            className="bg-white dark:bg-white/5 border border-ink/10 dark:border-paper/10 rounded-3xl p-6 shadow-sm space-y-4"
           >
-            <div className="text-xs text-muted leading-relaxed mb-4 p-3 bg-paper/20 dark:bg-white/5 rounded-xl border border-ink/5 dark:border-paper/5">
+            <div className="text-xs text-muted leading-relaxed p-3 bg-paper/20 dark:bg-white/5 rounded-xl border border-ink/5 dark:border-paper/5">
               <span className="font-bold text-accent block mb-1">Explanation:</span>
               {current.explanation}
             </div>
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={proceed}
-              className="w-full bg-ink dark:bg-paper text-paper dark:text-ink py-3 rounded-2xl text-xs font-bold shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-1.5"
-            >
-              {index + 1 < questions.length ? "Next Question (Enter)" : "Finish Quiz (Enter)"}
-            </motion.button>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() =>
+                  triggerCopilot(current.question, current.options[current.correct_index], current.explanation, current.options)
+                }
+                className="px-5 py-3 border border-ink/10 dark:border-paper/10 text-muted hover:text-accent hover:border-accent/30 rounded-2xl text-xs font-bold transition-all bg-paper/20 dark:bg-white/5 flex items-center justify-center gap-1.5 shadow-sm shrink-0"
+              >
+                <span>🤖</span> Ask Copilot
+              </button>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={proceed}
+                className="flex-1 bg-ink dark:bg-paper text-paper dark:text-ink py-3 rounded-2xl text-xs font-bold shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-1.5"
+              >
+                {index + 1 < questions.length ? "Next Question (Enter)" : "Finish Quiz (Enter)"}
+              </motion.button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -367,13 +413,21 @@ export default function QuizPage({ params }: { params: { id: string } }) {
       {/* Keyboard Helpers */}
       <div className="mt-8 text-center bg-paper/40 dark:bg-white/5 border border-ink/5 dark:border-paper/5 rounded-xl py-2 px-4 max-w-xs mx-auto">
         <p className="text-[10px] text-muted font-medium">
-          Press <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm">A</span> 
-          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-0.5">B</span> 
-          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-0.5">C</span> 
-          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-0.5">D</span> to select · 
+          Press <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm">A</span>
+          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-0.5">B</span>
+          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-0.5">C</span>
+          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-0.5">D</span> to select ·
           <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm ml-1">Enter</span> to proceed
         </p>
       </div>
+
+      {/* Copilot Drawer overlay */}
+      <CopilotDrawer
+        isOpen={isCopilotOpen}
+        onClose={() => setIsCopilotOpen(false)}
+        cardFront={copilotCardFront}
+        cardBack={copilotCardBack}
+      />
     </main>
   );
 }
