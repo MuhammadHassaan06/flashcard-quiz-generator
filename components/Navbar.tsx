@@ -74,12 +74,28 @@ export default function Navbar() {
           <Link
             href="/decks"
             className={`text-sm font-medium transition-colors hover:text-accent ${
-              pathname === "/decks" || pathname.startsWith("/deck/")
+              pathname === "/decks" || (pathname.startsWith("/deck/") && !pathname.endsWith("/edit") && !pathname.endsWith("/review") && !pathname.endsWith("/quiz"))
                 ? "text-accent font-semibold"
                 : "text-muted"
             }`}
           >
             My Decks
+          </Link>
+          <Link
+            href="/analytics"
+            className={`text-sm font-medium transition-colors hover:text-accent ${
+              pathname === "/analytics" ? "text-accent font-semibold" : "text-muted"
+            }`}
+          >
+            Stats
+          </Link>
+          <Link
+            href="/discover"
+            className={`text-sm font-medium transition-colors hover:text-accent ${
+              pathname === "/discover" ? "text-accent font-semibold" : "text-muted"
+            }`}
+          >
+            Discover
           </Link>
           <div className="h-4 w-[1px] bg-ink/10 dark:bg-paper/10" />
           <ThemeToggle />
