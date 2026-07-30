@@ -34,6 +34,7 @@ export default function EditDeckPage({ params }: { params: { id: string } }) {
   // Page state
   const [tab, setTab] = useState<"cards" | "quiz">("cards");
   const [savingDeck, setSavingDeck] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   // New Card State
@@ -65,7 +66,7 @@ export default function EditDeckPage({ params }: { params: { id: string } }) {
       setLoading(true);
       const { data: deck } = await supabase
         .from("decks")
-        .select("title")
+        .select("title, is_public")
         .eq("id", params.id)
         .single();
 
@@ -85,6 +86,7 @@ export default function EditDeckPage({ params }: { params: { id: string } }) {
         .eq("deck_id", params.id);
 
       setDeckTitle(deck.title);
+      setIsPublic(deck.is_public);
       setCards((cardRows as Card[]) ?? []);
       setQuizQuestions((quizRows as QuizQuestion[]) ?? []);
       setLoading(false);
@@ -97,6 +99,25 @@ export default function EditDeckPage({ params }: { params: { id: string } }) {
   const triggerStatus = (text: string, type: "success" | "error") => {
     setStatusMessage({ text, type });
     setTimeout(() => setStatusMessage(null), 3000);
+  };
+
+  // Toggle Public Sharing Setting
+  const handleTogglePublic = async (checked: boolean) => {
+    setIsPublic(checked);
+    const { error } = await supabase
+      .from("decks")
+      .update({ is_public: checked })
+      .eq("id", params.id);
+
+    if (error) {
+      setIsPublic(!checked);
+      triggerStatus("Failed to update sharing setting.", "error");
+    } else {
+      triggerStatus(
+        checked ? "Deck is now public in Community Library!" : "Deck is now private.",
+        "success"
+      );
+    }
   };
 
   // Save Deck Title
@@ -269,7 +290,7 @@ export default function EditDeckPage({ params }: { params: { id: string } }) {
       {/* Title Editor Card */}
       <div className="bg-white dark:bg-white/5 border border-ink/10 dark:border-paper/10 rounded-3xl p-6 shadow-sm mb-8">
         <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-2">Deck Title</label>
-        <div className="flex gap-3">
+        <div className="flex gap-3 mb-4">
           <input
             type="text"
             className="flex-1 px-4 py-3 rounded-xl border border-ink/10 dark:border-paper/10 bg-paper/30 dark:bg-ink/30 text-sm focus:outline-none focus:border-accent transition-colors font-semibold"
@@ -282,6 +303,27 @@ export default function EditDeckPage({ params }: { params: { id: string } }) {
             className="bg-accent text-white px-5 rounded-xl font-bold text-xs shadow-md shadow-accent/15 transition-all disabled:opacity-50 flex items-center justify-center"
           >
             {savingDeck ? "Saving..." : "Save Title"}
+          </button>
+        </div>
+
+        {/* Public Sharing Toggle */}
+        <div className="flex items-center justify-between pt-4 border-t border-ink/5 dark:border-paper/5">
+          <div>
+            <h4 className="text-xs font-bold text-ink dark:text-paper">Community Sharing</h4>
+            <p className="text-[10px] text-muted">Allow other students to discover, practice, and clone this deck.</p>
+          </div>
+          <button
+            onClick={() => handleTogglePublic(!isPublic)}
+            className={`w-12 h-6 rounded-full p-0.5 transition-colors focus:outline-none relative flex items-center ${
+              isPublic ? "bg-accent justify-end" : "bg-ink/10 dark:bg-paper/10 justify-start"
+            }`}
+            aria-label="Toggle public deck visibility"
+          >
+            <motion.div
+              layout
+              className="w-5 h-5 rounded-full bg-white shadow-sm"
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            />
           </button>
         </div>
       </div>
