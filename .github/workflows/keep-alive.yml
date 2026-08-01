@@ -1,0 +1,16 @@
+name: Keep Supabase Project Active
+
+on:
+  schedule:
+    - cron: '0 0 */3 * *' # Har 3 din baad chalega
+  workflow_dispatch: # Manual run karne ke liye
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          curl -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"
