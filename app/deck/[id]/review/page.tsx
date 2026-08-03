@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import FlipCard from "@/components/FlipCard";
 import CopilotDrawer from "@/components/CopilotDrawer";
+import PomodoroTimer from "@/components/PomodoroTimer";
 import { supabase } from "@/lib/supabaseClient";
-import { calculateSM2, QUALITY, SM2State } from "@/lib/sm2";
+import { calculateSM2, QUALITY, SM2State, QualityGrade } from "@/lib/sm2";
 import { calculateMatchScore } from "@/lib/voiceMatch";
+import { exportDeckToPrintablePDF } from "@/lib/pdfExport";
 import type { Session } from "@supabase/supabase-js";
 
 interface Card extends SM2State {
@@ -111,10 +113,21 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
     }
   }, []);
 
-  // Filter cards based on mode
-  const now = new Date().toISOString();
-  const dueCards = cards.filter((c) => c.next_review_date <= now);
-  const activeCards = reviewMode === "due" ? dueCards : cards;
+  // Manage active review session queue (supports re-queuing failed cards)
+  const [sessionQueue, setSessionQueue] = useState<Card[]>([]);
+  const [isQueueInitialized, setIsQueueInitialized] = useState(false);
+
+  useEffect(() => {
+    if (cards.length === 0 || isQueueInitialized) return;
+    const nowStr = new Date().toISOString();
+    const due = cards.filter((c) => c.next_review_date <= nowStr);
+    const list = reviewMode === "due" ? (due.length > 0 ? due : cards) : cards;
+    setSessionQueue(list);
+    setIndex(0);
+    setIsQueueInitialized(true);
+  }, [cards, isQueueInitialized, reviewMode]);
+
+  const activeCards = sessionQueue;
   const current = activeCards[index];
 
   const advance = useCallback(() => {
@@ -126,11 +139,18 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
   }, []);
 
   const handleAnswer = useCallback(
-    async (quality: 0 | 3 | 5) => {
+    async (quality: QualityGrade) => {
       if (!current || !session) return;
       const nextState = calculateSM2(current, quality);
 
       advance();
+
+      // If user marks Again (1), re-queue card to appear at end of active session
+      if (quality === QUALITY.AGAIN) {
+        setSessionQueue((prev) => [...prev, current]);
+        setToast("Card re-queued for current session!");
+        setTimeout(() => setToast(null), 2500);
+      }
 
       // Optimistically update card locally to reflect changes
       setCards((prev) =>
@@ -208,10 +228,12 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
         e.preventDefault();
         setFlipped((f) => !f);
       } else if (e.key === "1") {
-        handleAnswer(QUALITY.WRONG);
+        handleAnswer(QUALITY.AGAIN);
       } else if (e.key === "2") {
         handleAnswer(QUALITY.HARD);
       } else if (e.key === "3") {
+        handleAnswer(QUALITY.GOOD);
+      } else if (e.key === "4") {
         handleAnswer(QUALITY.EASY);
       }
     }
@@ -332,6 +354,7 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
               <button
                 onClick={() => {
                   setReviewMode("all");
+                  setSessionQueue(cards);
                   setIndex(0);
                   setFlipped(false);
                 }}
@@ -358,7 +381,7 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
     );
   }
 
-  const pct = Math.round((index / activeCards.length) * 100);
+  const pct = Math.min(100, Math.round(((index + 1) / Math.max(1, activeCards.length)) * 100));
 
   return (
     <main className="max-w-xl mx-auto px-6 py-12 relative">
@@ -416,6 +439,20 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
             }`}
           >
             🎤 {isVoiceMode ? "Voice Mode: ON" : "Voice Mode: OFF"}
+          </button>
+
+          <button
+            onClick={() => router.push(`/deck/${params.id}/podcast`)}
+            className="text-[10px] font-bold transition-all px-2.5 py-1 rounded-lg border border-accent/30 text-accent hover:bg-accent/15 flex items-center gap-1"
+          >
+            🎧 Podcast Mode
+          </button>
+
+          <button
+            onClick={() => exportDeckToPrintablePDF(deckTitle, cards)}
+            className="text-[10px] font-bold transition-all px-2.5 py-1 rounded-lg border border-ink/10 dark:border-paper/10 text-muted hover:text-ink dark:hover:text-paper hover:bg-ink/5 flex items-center gap-1"
+          >
+            🖨️ Export PDF
           </button>
         </div>
         
@@ -520,11 +557,13 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
                     {matchScore}% Match
                   </span>
                   <p className="text-[10px] text-muted w-full mt-1">
-                    {matchScore >= 75
-                      ? "Excellent! Suggested Score: Easy (3)"
-                      : matchScore >= 45
+                    {matchScore >= 80
+                      ? "Excellent! Suggested Score: Easy (4)"
+                      : matchScore >= 60
+                      ? "Good match. Suggested Score: Good (3)"
+                      : matchScore >= 35
                       ? "Partial match. Suggested Score: Hard (2)"
-                      : "Low similarity. Suggested Score: Wrong (1)"}
+                      : "Low similarity. Suggested Score: Again (1)"}
                   </p>
                 </div>
               )}
@@ -548,45 +587,58 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
         </motion.div>
       </AnimatePresence>
 
-      {/* Control Buttons */}
-      <div className="flex gap-3 mt-8 justify-center flex-wrap">
+      {/* Control Rating Buttons */}
+      <div className="flex gap-2.5 mt-8 justify-center flex-wrap">
         <motion.button
           whileTap={{ scale: 0.94 }}
-          onClick={() => handleAnswer(QUALITY.WRONG)}
-          className="px-6 py-3 rounded-2xl bg-accent2 text-white text-xs font-bold shadow-sm shadow-accent2/10"
+          onClick={() => handleAnswer(QUALITY.AGAIN)}
+          className="px-4 py-2.5 rounded-2xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold shadow-md shadow-red-500/20 transition-colors"
+          title="Reset interval & show again in current session (1)"
         >
-          Wrong (1)
+          Again (1)
         </motion.button>
         <motion.button
           whileTap={{ scale: 0.94 }}
           onClick={() => handleAnswer(QUALITY.HARD)}
-          className="px-6 py-3 rounded-2xl bg-ink/80 dark:bg-paper/80 text-white dark:text-ink text-xs font-bold shadow-sm"
+          className="px-4 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-md shadow-amber-500/20 transition-colors"
+          title="Slight interval increase (2)"
         >
           Hard (2)
         </motion.button>
         <motion.button
           whileTap={{ scale: 0.94 }}
-          onClick={() => handleAnswer(QUALITY.EASY)}
-          className="px-6 py-3 rounded-2xl bg-accent text-white text-xs font-bold shadow-sm shadow-accent/15"
+          onClick={() => handleAnswer(QUALITY.GOOD)}
+          className="px-4 py-2.5 rounded-2xl bg-white dark:bg-white/10 text-ink dark:text-paper border border-ink/10 dark:border-paper/10 hover:bg-ink/5 dark:hover:bg-paper/15 text-xs font-bold shadow-sm transition-colors"
+          title="Standard interval multiplier (3)"
         >
-          Easy (3)
+          Good (3)
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.94 }}
+          onClick={() => handleAnswer(QUALITY.EASY)}
+          className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition-colors"
+          title="Large interval multiplier for mastered card (4)"
+        >
+          Easy (4)
         </motion.button>
         <motion.button
           whileTap={{ scale: 0.94 }}
           onClick={() => setIsCopilotOpen(true)}
-          className="px-5 py-3 rounded-2xl border border-ink/10 dark:border-paper/10 text-muted hover:text-accent hover:border-accent/40 bg-white dark:bg-white/5 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+          className="px-4 py-2.5 rounded-2xl bg-accent/15 hover:bg-accent/25 text-accent border border-accent/30 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+          title="Ask AI Copilot for hint or explanation"
         >
-          🤖 Ask Copilot
+          🤖 Copilot / Explain
         </motion.button>
       </div>
 
       {/* Keyboard Helper Cheat Sheet */}
-      <div className="mt-8 text-center bg-paper/40 dark:bg-white/5 border border-ink/5 dark:border-paper/5 rounded-xl py-2 px-4 max-w-xs mx-auto">
+      <div className="mt-8 text-center bg-paper/40 dark:bg-white/5 border border-ink/5 dark:border-paper/5 rounded-xl py-2 px-4 max-w-sm mx-auto">
         <p className="text-[10px] text-muted font-medium">
           <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mr-1">Space</span> to flip · 
-          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-1">1</span> 
-          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-1">2</span> 
-          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-1">3</span> for grades
+          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-1">1</span> Again · 
+          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-1">2</span> Hard · 
+          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-1">3</span> Good · 
+          <span className="font-bold text-ink dark:text-paper bg-white dark:bg-ink border border-ink/10 dark:border-paper/10 px-1 py-0.5 rounded shadow-sm mx-1">4</span> Easy
         </p>
       </div>
 
@@ -611,6 +663,9 @@ export default function ReviewPage({ params }: { params: { id: string } }) {
         cardFront={current.front}
         cardBack={current.back}
       />
+
+      {/* Floating Pomodoro Focus Timer */}
+      <PomodoroTimer />
     </main>
   );
 }
