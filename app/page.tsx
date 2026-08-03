@@ -569,7 +569,7 @@ export default function HomePage() {
                       <div className="text-xs font-bold text-ink dark:text-paper">Front (Question):</div>
                       <div className="text-xs text-muted font-medium leading-relaxed">{card.front}</div>
                       <div className="text-xs font-bold text-ink dark:text-paper pt-1.5">Back (Answer):</div>
-                      <div className="text-xs text-muted font-medium leading-relaxed">{card.back}</div>
+                      <div className="text-xs text-muted font-medium leading-relaxed whitespace-pre-wrap">{card.back}</div>
                     </div>
                   </div>
                 ))}
