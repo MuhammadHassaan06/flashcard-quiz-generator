@@ -9,7 +9,44 @@ import AuthForm from "@/components/AuthForm";
 import { supabase } from "@/lib/supabaseClient";
 import type { GenerationResult } from "@/lib/chunkAndGenerate";
 
-type InputMode = "text" | "url" | "file";
+type InputMode = "text" | "url" | "file" | "image";
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function compressImageToBase64(file: File, maxWidth = 1200, quality = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -21,6 +58,7 @@ export default function HomePage() {
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [difficulty, setDifficulty] = useState<"basic" | "applied">("basic");
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -62,7 +100,11 @@ export default function HomePage() {
       return;
     }
     if (mode === "file" && !file) {
-      setError("Please select a PDF or Word document file.");
+      setError("Please select a PDF, TXT, or Word document file.");
+      return;
+    }
+    if (mode === "image" && !imageFile) {
+      setError("Please select an image photo of your textbook, slides, or notes.");
       return;
     }
 
@@ -70,6 +112,31 @@ export default function HomePage() {
     setResult(null);
     setIsGenerating(true);
     setStage("parsing");
+
+    // Special client-side compressed handler for Image OCR
+    if (mode === "image" && imageFile) {
+      setDetail("Compressing and extracting text from image via AI Vision...");
+      try {
+        const base64Data = await compressImageToBase64(imageFile);
+        const res = await fetch("/api/ocr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: base64Data, cardCount: 6 }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "OCR Image analysis failed.");
+
+        setResult({
+          flashcards: data.flashcards || [],
+          quiz: [],
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to analyze image.");
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
 
     const formData = new FormData();
     formData.append("inputType", mode);
@@ -217,7 +284,7 @@ export default function HomePage() {
       {/* Input Form Panel */}
       <div className="bg-white dark:bg-white/5 border border-ink/10 dark:border-paper/10 rounded-3xl p-6 shadow-sm mb-8">
         <div className="flex gap-2 mb-6">
-          {(["text", "url", "file"] as InputMode[]).map((m) => (
+          {(["text", "url", "file", "image"] as InputMode[]).map((m) => (
             <motion.button
               key={m}
               whileTap={{ scale: 0.95 }}
@@ -231,7 +298,13 @@ export default function HomePage() {
                   : "border-ink/10 dark:border-paper/10 text-muted hover:bg-ink/5 dark:hover:bg-paper/5"
               }`}
             >
-              {m === "text" ? "Paste Notes" : m === "url" ? "URL Webpage" : "Upload Document"}
+              {m === "text"
+                ? "Paste Notes"
+                : m === "url"
+                ? "URL Webpage"
+                : m === "file"
+                ? "Upload Document"
+                : "📷 Image OCR"}
             </motion.button>
           ))}
         </div>
@@ -292,13 +365,71 @@ export default function HomePage() {
                 exit={{ opacity: 0, y: -5 }}
                 transition={{ duration: 0.2 }}
               >
-                <label className="block text-xs font-medium text-muted mb-1.5">Select PDF or Word File</label>
-                <input
-                  type="file"
-                  accept=".pdf,.docx,.PDF,.DOCX"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="w-full p-4 rounded-xl border border-dashed border-ink/20 dark:border-paper/20 bg-paper/30 dark:bg-ink/30 text-sm file:mr-4 file:py-1.5 file:px-3.5 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-accent/15 file:text-accent hover:file:bg-accent/20 transition-all cursor-pointer"
-                />
+                <label className="block text-xs font-medium text-muted mb-1.5">
+                  Select Document (PDF, TXT, MD, DOCX)
+                </label>
+                {file ? (
+                  <div className="p-4 rounded-xl border border-accent/30 bg-accent/5 flex items-center justify-between">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <span className="text-xl">📄</span>
+                      <div className="truncate">
+                        <p className="text-xs font-bold text-ink dark:text-paper truncate">{file.name}</p>
+                        <span className="text-[10px] text-accent font-mono font-semibold">{formatBytes(file.size)}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setFile(null)}
+                      className="text-xs font-bold text-accent2 hover:bg-accent2/10 px-2.5 py-1 rounded-lg transition-colors shrink-0"
+                    >
+                      ✕ Remove
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt,.md,.PDF,.DOCX,.TXT,.MD"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                    className="w-full p-4 rounded-xl border border-dashed border-ink/20 dark:border-paper/20 bg-paper/30 dark:bg-ink/30 text-sm file:mr-4 file:py-1.5 file:px-3.5 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-accent/15 file:text-accent hover:file:bg-accent/20 transition-all cursor-pointer"
+                  />
+                )}
+              </motion.div>
+            )}
+
+            {mode === "image" && (
+              <motion.div
+                key="image"
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                transition={{ duration: 0.2 }}
+              >
+                <label className="block text-xs font-medium text-muted mb-1.5">
+                  Select Textbook Photo, Slides, or Handwritten Notes
+                </label>
+                {imageFile ? (
+                  <div className="p-4 rounded-xl border border-accent/30 bg-accent/5 flex items-center justify-between">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <span className="text-xl">🖼️</span>
+                      <div className="truncate">
+                        <p className="text-xs font-bold text-ink dark:text-paper truncate">{imageFile.name}</p>
+                        <span className="text-[10px] text-accent font-mono font-semibold">{formatBytes(imageFile.size)}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setImageFile(null)}
+                      className="text-xs font-bold text-accent2 hover:bg-accent2/10 px-2.5 py-1 rounded-lg transition-colors shrink-0"
+                    >
+                      ✕ Remove
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
+                    className="w-full p-4 rounded-xl border border-dashed border-accent/40 bg-accent/5 text-sm file:mr-4 file:py-1.5 file:px-3.5 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-accent file:text-white hover:file:opacity-90 transition-all cursor-pointer"
+                  />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
