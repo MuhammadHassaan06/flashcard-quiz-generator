@@ -6,10 +6,22 @@ import { parseCloze } from "@/lib/cloze";
 import { parseMathAndText } from "@/lib/math";
 
 function FormattedText({ text, isFlipped }: { text: string; isFlipped: boolean }) {
-  const clozeSegments = parseCloze(text, isFlipped);
+  if (!text) return null;
+
+  // Clean and format answers: unescape literal \n, and format run-together list items on new lines
+  const cleanText = text
+    .replaceAll("\\n", "\n")
+    .replace(/([^\n])\s*(?:(?:\d+\.|\bullet|•|-|\*)\s+)/g, "$1\n");
+
+  const isMultiLine = cleanText.includes("\n") || cleanText.length > 80;
+  const clozeSegments = parseCloze(cleanText, isFlipped);
 
   return (
-    <div className="leading-relaxed whitespace-pre-wrap text-left sm:text-center font-body inline-block w-full text-sm sm:text-base space-y-2">
+    <div
+      className={`leading-relaxed whitespace-pre-wrap font-body inline-block w-full text-sm sm:text-base space-y-1.5 ${
+        isMultiLine ? "text-left" : "text-left sm:text-center"
+      }`}
+    >
       {clozeSegments.map((seg, idx) => {
         if (seg.isCloze) {
           return (
@@ -47,7 +59,7 @@ function FormattedText({ text, isFlipped }: { text: string; isFlipped: boolean }
             );
           }
           return (
-            <span key={`${idx}-${mIdx}`} className="whitespace-pre-wrap block text-left sm:text-center my-1">
+            <span key={`${idx}-${mIdx}`} className="whitespace-pre-wrap block my-0.5">
               {mSeg.content}
             </span>
           );
@@ -161,7 +173,7 @@ export default function FlipCard({
     >
       <div className={`flip-card ${flipped ? "flipped" : ""}`}>
         {/* Front Face */}
-        <div className="flip-face bg-white dark:bg-white/5 border border-ink/10 dark:border-paper/10 rounded-2xl shadow-sm flex flex-col justify-between p-6 relative">
+        <div className={`flip-face bg-white dark:bg-white/5 border border-ink/10 dark:border-paper/10 rounded-2xl shadow-sm flex flex-col justify-between p-6 relative ${flipped ? "pointer-events-none" : "pointer-events-auto"}`}>
           {/* Top Actions Bar */}
           <div className="flex justify-between items-center z-20 w-full mb-2">
             <select
@@ -213,7 +225,7 @@ export default function FlipCard({
         </div>
 
         {/* Back Face */}
-        <div className="flip-face flip-face-back bg-ink dark:bg-paper text-paper dark:text-ink rounded-2xl shadow-sm flex flex-col justify-between p-6 relative">
+        <div className={`flip-face flip-face-back bg-ink dark:bg-paper text-paper dark:text-ink rounded-2xl shadow-sm flex flex-col justify-between p-6 relative ${!flipped ? "pointer-events-none" : "pointer-events-auto"}`}>
           {/* Top Actions Bar */}
           <div className="flex justify-between items-center z-20 w-full mb-2">
             <select
