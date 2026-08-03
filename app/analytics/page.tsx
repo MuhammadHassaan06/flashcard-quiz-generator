@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
 import type { Session } from "@supabase/supabase-js";
+import AchievementBadges from "@/components/AchievementBadges";
 
 interface StudySession {
   date: string;
@@ -186,6 +187,13 @@ export default function AnalyticsPage() {
           Monitor your daily study streaks, card retention rates, and historical quiz scores.
         </p>
       </div>
+
+      {/* Milestone Achievement Badges */}
+      <AchievementBadges
+        totalDecks={mastery.total > 0 ? 1 : 0}
+        masteredCards={mastery.mastered}
+        currentStreak={streak}
+      />
 
       {/* Stats Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10">
