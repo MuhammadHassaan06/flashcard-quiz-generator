@@ -38,6 +38,14 @@
   transform: rotateY(180deg);
 }
 
+.flip-card:not(.flipped) .flip-face-back {
+  pointer-events: none;
+}
+
+.flip-card.flipped .flip-face:not(.flip-face-back) {
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .flip-card {
     transition: none;
