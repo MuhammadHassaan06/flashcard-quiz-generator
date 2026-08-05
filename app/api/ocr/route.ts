@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No image payload provided" }, { status: 400 });
     }
 
-    // Use active Groq Vision Model: llama-3.2-90b-vision-preview
-    const visionModel = process.env.GROQ_VISION_MODEL || "llama-3.2-90b-vision-preview";
+    // Use active Groq Vision Model: qwen/qwen3.6-27b
+    const visionModel = process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b";
 
     const imageUrl = imageBase64.startsWith("data:")
       ? imageBase64
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
             {
               type: "text",
               text: `Analyze this image (textbook page, whiteboard, or handwritten notes) and extract key facts to generate ${cardCount} flashcards. 
-              Format list answers with double line breaks (\\n\\n) before each numbered point or bullet point so that Markdown renders them on separate lines.
+              Whenever a flashcard answer ("back") contains multiple points, methods, or steps, format each point on a NEW LINE with double line breaks (\\n\\n) before each numbered point or bullet point so that it renders in a clean line-by-line list.
               Output MUST be valid JSON array of objects without markdown fences:
               [
                 { "front": "Question or term", "back": "Clear concise answer" }
@@ -45,7 +45,11 @@ export async function POST(req: NextRequest) {
     });
 
     const responseText = completion.choices[0]?.message?.content || "[]";
-    const cleaned = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const cleaned = responseText
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
 
     const flashcards = JSON.parse(cleaned);
 
