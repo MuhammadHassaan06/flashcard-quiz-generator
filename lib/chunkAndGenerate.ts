@@ -53,7 +53,9 @@ Rules:
 }
 - Generate 5-10 flashcards and 3-6 quiz questions per passage, scaled to how much
   distinct content the passage actually contains.
-- Flashcards: front is a question or term, back is a concise, accurate answer.
+- Flashcards: front is a question, term, or Cloze deletion sentence (e.g. "The capital of France is {{c1::Paris}}").
+- Flashcard answers: Whenever a flashcard answer ("back") contains multiple points, methods, explanations, or steps, format each item on a NEW LINE using explicit newline characters (\n) or double linebreaks (\n\n) before each numbered point (e.g. 1., 2., 3.) or bullet point (- or •) so they render as a clean line-by-line list.
+- Use LaTeX math formatting ($...$ for inline, $$...$$ for block) whenever generating mathematical or scientific formulas.
 - Quiz: exactly 4 options per question, exactly one correct_index (0-3), and a short
   explanation of why the correct answer is right.
 - Do not invent facts that are not supported by the passage.`;
